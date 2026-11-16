@@ -1,0 +1,556 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<link rel="apple-touch-icon" href="./icon-512.png">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>対局時計</title>
+<meta name="theme-color" content="#1c2430">
+<link rel="manifest" href="./manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="対局時計">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #1c2430;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont,
+               "Segoe UI", sans-serif;
+}
+
+button, input, select {
+  font-family: inherit;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) 8px
+           env(safe-area-inset-bottom);
+}
+
+.clock {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 15px;
+  background: #394453;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+.clock.running { background: #157d64; }
+.clock.expired { background: #a52d36; }
+
+.clock-content {
+  pointer-events: none;
+}
+
+#top .clock-content {
+  transform: rotate(180deg);
+}
+
+.player { font-size: 18px; }
+
+.time {
+  font-size: clamp(48px, 13vw, 100px);
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+}
+
+.status { font-size: 15px; }
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.controls button {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 15px;
+  font-size: 16px;
+  background: #e4e9ef;
+  color: #17202b;
+}
+
+#settings {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #1c2430;
+  overflow-y: auto;
+  padding: max(25px, env(safe-area-inset-top))
+           25px max(25px, env(safe-area-inset-bottom));
+}
+
+#settings h1 {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.field { margin: 24px 0; }
+
+.field label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+input, select {
+  width: 100%;
+  padding: 12px;
+  font-size: 20px;
+  border: 0;
+  border-radius: 8px;
+  background: white;
+  color: #17202b;
+}
+
+.time-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.time-inputs > div { flex: 1; min-width: 0; }
+
+#start {
+  width: 100%;
+  background: #16846b;
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 20px;
+  margin-top: 20px;
+}
+
+.note {
+  color: #bac5d1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.hidden { display: none !important; }
+</style>
+</head>
+
+<body>
+
+<!-- 設定画面 -->
+<div id="settings">
+  <h1>対局時計</h1>
+
+  <div class="field">
+    <label for="mode">計測モード</label>
+    <select id="mode">
+      <option value="sudden">切れ負け</option>
+      <option value="move">1手X秒</option>
+    </select>
+  </div>
+
+  <div class="field" id="suddenField">
+    <label>持ち時間</label>
+    <div class="time-inputs">
+      <div>
+        <label for="minutes">分</label>
+        <input id="minutes" type="number"
+               min="0" max="999" step="1" value="10">
+      </div>
+      <div>
+        <label for="suddenSeconds">秒</label>
+        <input id="suddenSeconds" type="number"
+               min="0" max="59" step="1" value="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="field hidden" id="moveField">
+    <label for="seconds">1手の制限時間（秒）</label>
+    <input id="seconds" type="number"
+           min="1" max="3600" step="1" value="30">
+  </div>
+
+  <button id="start">対局画面へ</button>
+
+  <p class="note">
+    切れ負け：各プレイヤーの持ち時間が0になると終了します。
+  </p>
+  <p class="note">
+    1手X秒：残り5秒から毎秒音が鳴ります。
+    0秒を過ぎても時計は止まらず、超過時間を表示します。
+  </p>
+</div>
+
+<!-- 対局画面 -->
+<div id="app">
+
+  <div class="clock" id="top">
+    <div class="clock-content">
+      <div class="player">PLAYER 1</div>
+      <div class="time">10:00</div>
+      <div class="status">待機中</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="pause">一時停止</button>
+    <button id="reset">リセット</button>
+    <button id="config">設定</button>
+  </div>
+
+  <div class="clock" id="bottom">
+    <div class="clock-content">
+      <div class="player">PLAYER 2</div>
+      <div class="time">10:00</div>
+      <div class="status">待機中</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+let mode = "sudden";
+let initial = 600;
+let remaining = [600, 600];
+let active = -1;
+let paused = false;
+let finished = false;
+let deadline = 0;
+let audio = null;
+let lastBeepSecond = null;
+
+function setupAudio() {
+  try {
+    if (!audio) {
+      const Context = window.AudioContext ||
+                      window.webkitAudioContext;
+      if (Context) audio = new Context();
+    }
+    if (audio && audio.state === "suspended") {
+      audio.resume();
+    }
+  } catch (error) {
+    console.warn("音声初期化失敗", error);
+  }
+}
+
+function beep(freq = 880, duration = 0.12) {
+  if (!audio || audio.state !== "running") return;
+
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+
+  osc.connect(gain);
+  gain.connect(audio.destination);
+
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.15, audio.currentTime);
+  gain.gain.exponentialRampToValueAtTime(
+    0.001, audio.currentTime + duration
+  );
+
+  osc.start();
+  osc.stop(audio.currentTime + duration);
+}
+
+function formatTime(value) {
+  if (mode === "move" && value <= 0) {
+    const over = Math.floor(Math.max(0, -value));
+    return "+" +
+      String(Math.floor(over / 60)).padStart(2, "0") +
+      ":" +
+      String(over % 60).padStart(2, "0");
+  }
+
+  const total = Math.ceil(Math.max(0, value));
+
+  return String(Math.floor(total / 60)).padStart(2, "0") +
+    ":" +
+    String(total % 60).padStart(2, "0");
+}
+
+function syncClock() {
+  if (active === -1 || paused || finished) return;
+
+  const now = performance.now();
+  const previous = remaining[active];
+  const current = (deadline - now) / 1000;
+
+  remaining[active] = current;
+
+  if (mode === "sudden") {
+    if (current <= 0) {
+      remaining[active] = 0;
+      finished = true;
+      beep(440, 0.6);
+    }
+  } else {
+    const before = Math.ceil(previous);
+    const after = Math.ceil(current);
+
+    if (after !== before &&
+        after >= 1 && after <= 5 &&
+        lastBeepSecond !== after) {
+      lastBeepSecond = after;
+      beep();
+    }
+
+    if (previous > 0 && current <= 0) {
+      beep(440, 0.5);
+    }
+  }
+}
+
+function render() {
+  ["top", "bottom"].forEach((id, i) => {
+    const el = $(id);
+    const running = active === i &&
+                    !paused && !finished;
+
+    const expired = mode === "move"
+      ? remaining[i] <= 0
+      : finished && active === i;
+
+    el.querySelector(".time").textContent =
+      formatTime(remaining[i]);
+
+    el.classList.toggle("running", running && !expired);
+    el.classList.toggle("expired", expired);
+
+    let status = "待機中";
+
+    if (finished) {
+      status = expired ? "時間切れ" : "終了";
+    } else if (paused) {
+      status = "一時停止中";
+    } else if (running) {
+      status = expired ? "超過中" : "計測中";
+    } else if (active !== -1) {
+      status = "相手の手番";
+    }
+
+    el.querySelector(".status").textContent = status;
+  });
+
+  $("pause").textContent =
+    paused ? "再開" : "一時停止";
+}
+
+function update() {
+  syncClock();
+  render();
+}
+
+function press(i) {
+  setupAudio();
+  syncClock();
+
+  if (finished || paused) {
+    render();
+    return;
+  }
+
+  if (active === -1) {
+    active = 1 - i;
+  } else if (active === i) {
+    active = 1 - i;
+  } else {
+    return;
+  }
+
+  if (mode === "move") {
+    remaining[active] = initial;
+  }
+
+  lastBeepSecond = null;
+  deadline = performance.now() +
+             remaining[active] * 1000;
+
+  render();
+}
+
+function resetClock() {
+  active = -1;
+  paused = false;
+  finished = false;
+  remaining = [initial, initial];
+  lastBeepSecond = null;
+  deadline = 0;
+  render();
+}
+
+$("top").addEventListener("click", () => press(0));
+$("bottom").addEventListener("click", () => press(1));
+
+$("pause").addEventListener("click", () => {
+  setupAudio();
+  syncClock();
+
+  if (active === -1 || finished) return;
+
+  if (paused) {
+    paused = false;
+    deadline = performance.now() +
+               remaining[active] * 1000;
+  } else {
+    paused = true;
+  }
+
+  render();
+});
+
+$("reset").addEventListener("click", () => {
+  if (confirm("時計をリセットしますか？")) {
+    resetClock();
+  }
+});
+
+$("config").addEventListener("click", () => {
+  syncClock();
+  paused = true;
+  render();
+  $("settings").classList.remove("hidden");
+});
+
+$("mode").addEventListener("change", () => {
+  const isMove = $("mode").value === "move";
+
+  $("suddenField").classList.toggle("hidden", isMove);
+  $("moveField").classList.toggle("hidden", !isMove);
+});
+
+$("start").addEventListener("click", () => {
+  const selectedMode = $("mode").value;
+  let newInitial;
+
+  if (selectedMode === "sudden") {
+    const mText = $("minutes").value.trim();
+    const sText = $("suddenSeconds").value.trim();
+
+    if (mText === "" || sText === "") {
+      alert("分と秒を入力してください。");
+      return;
+    }
+
+    const mins = Number(mText);
+    const secs = Number(sText);
+
+    if (!Number.isInteger(mins) ||
+        !Number.isInteger(secs) ||
+        mins < 0 || mins > 999 ||
+        secs < 0 || secs > 59 ||
+        (mins === 0 && secs === 0)) {
+      alert("持ち時間を正しく設定してください。");
+      return;
+    }
+
+    newInitial = mins * 60 + secs;
+
+  } else if (selectedMode === "move") {
+    const sText = $("seconds").value.trim();
+
+    if (sText === "") {
+      alert("制限時間を入力してください。");
+      return;
+    }
+
+    const secs = Number(sText);
+
+    if (!Number.isInteger(secs) ||
+        secs < 1 || secs > 3600) {
+      alert("1～3600秒で設定してください。");
+      return;
+    }
+
+    newInitial = secs;
+  } else {
+    alert("モードを選択してください。");
+    return;
+  }
+
+  setupAudio();
+
+  mode = selectedMode;
+  initial = newInitial;
+
+  try {
+    localStorage.setItem("clockSettings", JSON.stringify({
+      mode: mode,
+      minutes: $("minutes").value,
+      suddenSeconds: $("suddenSeconds").value,
+      seconds: $("seconds").value
+    }));
+  } catch (error) {
+    console.warn("設定を保存できませんでした", error);
+  }
+
+  resetClock();
+  $("settings").classList.add("hidden");
+});
+
+try {
+  const saved = JSON.parse(
+    localStorage.getItem("clockSettings") || "null"
+  );
+
+  if (saved) {
+    if (saved.mode === "sudden" ||
+        saved.mode === "move") {
+      $("mode").value = saved.mode;
+    }
+
+    if (saved.minutes !== undefined) {
+      $("minutes").value = saved.minutes;
+    }
+
+    $("suddenSeconds").value =
+      saved.suddenSeconds ?? "0";
+
+    if (saved.seconds !== undefined) {
+      $("seconds").value = saved.seconds;
+    }
+  }
+} catch (error) {
+  console.warn("設定読み込み失敗", error);
+}
+
+$("mode").dispatchEvent(new Event("change"));
+
+setInterval(update, 50);
+render();
+
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("Service Worker登録成功"))
+      .catch(error =>
+        console.error("Service Worker登録失敗", error)
+      );
+  });
+}
+
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+
+{
+  "name": "対局時計",
+  "short_name": "対局時計",
+  "description": "切れ負け・1手X秒に対応した対局時計",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1c2430",
+  "theme_color": "#1c2430",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
