@@ -2,17 +2,20 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<link rel="apple-touch-icon" href="./icon-512.png">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport"
+ content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>対局時計</title>
 <meta name="theme-color" content="#1c2430">
 <link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-512.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="対局時計">
 
 <style>
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
@@ -52,8 +55,13 @@ button, input, select {
   cursor: pointer;
 }
 
-.clock.running { background: #157d64; }
-.clock.expired { background: #a52d36; }
+.clock.running {
+  background: #157d64;
+}
+
+.clock.expired {
+  background: #a52d36;
+}
 
 .clock-content {
   pointer-events: none;
@@ -63,7 +71,9 @@ button, input, select {
   transform: rotate(180deg);
 }
 
-.player { font-size: 18px; }
+.player {
+  font-size: 18px;
+}
 
 .time {
   font-size: clamp(48px, 13vw, 100px);
@@ -71,22 +81,41 @@ button, input, select {
   font-variant-numeric: tabular-nums;
 }
 
-.status { font-size: 15px; }
+.status {
+  font-size: 15px;
+}
 
 .controls {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  align-items: center;
+  gap: 7px;
   padding: 12px 0;
+  flex-wrap: wrap;
 }
 
 .controls button {
   border: 0;
   border-radius: 10px;
-  padding: 12px 15px;
-  font-size: 16px;
+  padding: 12px 13px;
+  font-size: 15px;
   background: #e4e9ef;
   color: #17202b;
+  cursor: pointer;
+}
+
+#passButton {
+  background: #e7ad38;
+  color: #17202b;
+  font-weight: bold;
+  font-size: 24px;
+  flex: 1;
+  min-hight: 70px;
+}
+
+#passButton:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 #settings {
@@ -104,7 +133,9 @@ button, input, select {
   margin-bottom: 30px;
 }
 
-.field { margin: 24px 0; }
+.field {
+  margin: 24px 0;
+}
 
 .field label {
   display: block;
@@ -126,7 +157,24 @@ input, select {
   gap: 12px;
 }
 
-.time-inputs > div { flex: 1; min-width: 0; }
+.time-inputs > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  width: 23px;
+  height: 23px;
+  accent-color: #16846b;
+}
 
 #start {
   width: 100%;
@@ -137,6 +185,7 @@ input, select {
   padding: 16px;
   font-size: 20px;
   margin-top: 20px;
+  cursor: pointer;
 }
 
 .note {
@@ -145,7 +194,9 @@ input, select {
   line-height: 1.6;
 }
 
-.hidden { display: none !important; }
+.hidden {
+  display: none !important;
+}
 </style>
 </head>
 
@@ -185,14 +236,35 @@ input, select {
            min="1" max="3600" step="1" value="30">
   </div>
 
+  <!-- パス機能の設定 -->
+  <div class="field">
+    <label class="checkbox-row">
+      <input id="passEnabled" type="checkbox">
+      パスボタンを使用する
+    </label>
+  </div>
+
+  <div class="field hidden" id="passField">
+    <label for="passSeconds">
+      パス1回で消費する時間（秒）
+    </label>
+    <input id="passSeconds" type="number"
+           min="1" max="3600" step="1" value="5">
+    <p class="note">
+      パスを押すと、計測中のプレイヤーの時間を
+      指定秒数だけ減らします。
+      手番は切り替わりません。
+    </p>
+  </div>
+
   <button id="start">対局画面へ</button>
 
   <p class="note">
-    切れ負け：各プレイヤーの持ち時間が0になると終了します。
+    切れ負け：持ち時間が0になると終了します。
   </p>
   <p class="note">
     1手X秒：残り5秒から毎秒音が鳴ります。
-    0秒を過ぎても時計は止まらず、超過時間を表示します。
+    0秒を過ぎても計測を続けます。
   </p>
 </div>
 
@@ -209,6 +281,7 @@ input, select {
 
   <div class="controls">
     <button id="pause">一時停止</button>
+    <button id="passButton" class="hidden">パス</button>
     <button id="reset">リセット</button>
     <button id="config">設定</button>
   </div>
@@ -235,6 +308,10 @@ let active = -1;
 let paused = false;
 let finished = false;
 let deadline = 0;
+
+let passEnabled = false;
+let passSeconds = 5;
+
 let audio = null;
 let lastBeepSecond = null;
 
@@ -245,6 +322,7 @@ function setupAudio() {
                       window.webkitAudioContext;
       if (Context) audio = new Context();
     }
+
     if (audio && audio.state === "suspended") {
       audio.resume();
     }
@@ -275,6 +353,7 @@ function beep(freq = 880, duration = 0.12) {
 function formatTime(value) {
   if (mode === "move" && value <= 0) {
     const over = Math.floor(Math.max(0, -value));
+
     return "+" +
       String(Math.floor(over / 60)).padStart(2, "0") +
       ":" +
@@ -283,11 +362,37 @@ function formatTime(value) {
 
   const total = Math.ceil(Math.max(0, value));
 
-  return String(Math.floor(total / 60)).padStart(2, "0") +
+  return String(Math.floor(total / 60))
+    .padStart(2, "0") +
     ":" +
     String(total % 60).padStart(2, "0");
 }
 
+// 残り時間の変化に応じて音を鳴らす
+function checkTimeSounds(previous, current) {
+  if (mode === "sudden") {
+    if (previous > 0 && current <= 0) {
+      beep(440, 0.6);
+    }
+    return;
+  }
+
+  const before = Math.ceil(previous);
+  const after = Math.ceil(current);
+
+  if (after !== before &&
+      after >= 1 && after <= 5 &&
+      lastBeepSecond !== after) {
+    lastBeepSecond = after;
+    beep();
+  }
+
+  if (previous > 0 && current <= 0) {
+    beep(440, 0.5);
+  }
+}
+
+// 現在時刻から残り時間を計算する
 function syncClock() {
   if (active === -1 || paused || finished) return;
 
@@ -297,32 +402,19 @@ function syncClock() {
 
   remaining[active] = current;
 
-  if (mode === "sudden") {
-    if (current <= 0) {
-      remaining[active] = 0;
-      finished = true;
-      beep(440, 0.6);
-    }
-  } else {
-    const before = Math.ceil(previous);
-    const after = Math.ceil(current);
+  checkTimeSounds(previous, current);
 
-    if (after !== before &&
-        after >= 1 && after <= 5 &&
-        lastBeepSecond !== after) {
-      lastBeepSecond = after;
-      beep();
-    }
-
-    if (previous > 0 && current <= 0) {
-      beep(440, 0.5);
-    }
+  if (mode === "sudden" && current <= 0) {
+    remaining[active] = 0;
+    finished = true;
   }
 }
 
+// 画面の表示を更新する
 function render() {
   ["top", "bottom"].forEach((id, i) => {
     const el = $(id);
+
     const running = active === i &&
                     !paused && !finished;
 
@@ -353,6 +445,13 @@ function render() {
 
   $("pause").textContent =
     paused ? "再開" : "一時停止";
+
+  $("passButton").classList.toggle(
+    "hidden", !passEnabled
+  );
+
+  $("passButton").disabled =
+    active === -1 || paused || finished;
 }
 
 function update() {
@@ -360,6 +459,7 @@ function update() {
   render();
 }
 
+// 時計を押したときの処理
 function press(i) {
   setupAudio();
   syncClock();
@@ -382,12 +482,48 @@ function press(i) {
   }
 
   lastBeepSecond = null;
+
   deadline = performance.now() +
              remaining[active] * 1000;
 
   render();
 }
 
+// パスボタンを押したときの処理
+function usePass() {
+  setupAudio();
+  syncClock();
+
+  if (!passEnabled ||
+      active === -1 ||
+      paused ||
+      finished) {
+    render();
+    return;
+  }
+
+  const previous = remaining[active];
+
+  // 残り時間からパス秒数を減らす
+  remaining[active] -= passSeconds;
+
+  // 終了予定時刻も同じ秒数だけ早める
+  deadline -= passSeconds * 1000;
+
+  // パスによって残り5秒以内になった場合も音を確認
+  checkTimeSounds(previous, remaining[active]);
+
+  if (mode === "sudden" &&
+      remaining[active] <= 0) {
+    remaining[active] = 0;
+    finished = true;
+  }
+
+  // activeは変更しないため手番はそのまま
+  render();
+}
+
+// 時計を初期状態に戻す
 function resetClock() {
   active = -1;
   paused = false;
@@ -398,9 +534,14 @@ function resetClock() {
   render();
 }
 
+// プレイヤーの時計
 $("top").addEventListener("click", () => press(0));
 $("bottom").addEventListener("click", () => press(1));
 
+// パス
+$("passButton").addEventListener("click", usePass);
+
+// 一時停止・再開
 $("pause").addEventListener("click", () => {
   setupAudio();
   syncClock();
@@ -418,12 +559,14 @@ $("pause").addEventListener("click", () => {
   render();
 });
 
+// リセット
 $("reset").addEventListener("click", () => {
   if (confirm("時計をリセットしますか？")) {
     resetClock();
   }
 });
 
+// 設定画面を開く
 $("config").addEventListener("click", () => {
   syncClock();
   paused = true;
@@ -431,6 +574,7 @@ $("config").addEventListener("click", () => {
   $("settings").classList.remove("hidden");
 });
 
+// モードに応じて設定欄を切り替える
 $("mode").addEventListener("change", () => {
   const isMove = $("mode").value === "move";
 
@@ -438,6 +582,14 @@ $("mode").addEventListener("change", () => {
   $("moveField").classList.toggle("hidden", !isMove);
 });
 
+// パス設定欄の表示切り替え
+$("passEnabled").addEventListener("change", () => {
+  $("passField").classList.toggle(
+    "hidden", !$("passEnabled").checked
+  );
+});
+
+// 対局画面へ移動する
 $("start").addEventListener("click", () => {
   const selectedMode = $("mode").value;
   let newInitial;
@@ -487,26 +639,55 @@ $("start").addEventListener("click", () => {
     return;
   }
 
+  // パス設定の確認
+  const newPassEnabled = $("passEnabled").checked;
+  let newPassSeconds = 5;
+
+  if (newPassEnabled) {
+    const pText = $("passSeconds").value.trim();
+
+    if (pText === "") {
+      alert("パスの消費秒数を入力してください。");
+      return;
+    }
+
+    const p = Number(pText);
+
+    if (!Number.isInteger(p) ||
+        p < 1 || p > 3600) {
+      alert("パスの消費時間は1～3600秒で設定してください。");
+      return;
+    }
+
+    newPassSeconds = p;
+  }
+
   setupAudio();
 
   mode = selectedMode;
   initial = newInitial;
+  passEnabled = newPassEnabled;
+  passSeconds = newPassSeconds;
 
+  // 設定を保存
   try {
     localStorage.setItem("clockSettings", JSON.stringify({
       mode: mode,
       minutes: $("minutes").value,
       suddenSeconds: $("suddenSeconds").value,
-      seconds: $("seconds").value
+      seconds: $("seconds").value,
+      passEnabled: passEnabled,
+      passSeconds: $("passSeconds").value
     }));
   } catch (error) {
-    console.warn("設定を保存できませんでした", error);
+    console.warn("設定保存失敗", error);
   }
 
   resetClock();
   $("settings").classList.add("hidden");
 });
 
+// 前回の設定を読み込む
 try {
   const saved = JSON.parse(
     localStorage.getItem("clockSettings") || "null"
@@ -528,28 +709,37 @@ try {
     if (saved.seconds !== undefined) {
       $("seconds").value = saved.seconds;
     }
+
+    $("passEnabled").checked =
+      saved.passEnabled === true;
+
+    if (saved.passSeconds !== undefined) {
+      $("passSeconds").value = saved.passSeconds;
+    }
   }
 } catch (error) {
   console.warn("設定読み込み失敗", error);
 }
 
+// 初期表示を更新
 $("mode").dispatchEvent(new Event("change"));
+$("passEnabled").dispatchEvent(new Event("change"));
 
 setInterval(update, 50);
 render();
 
-
+// PWA用Service Worker
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js")
-      .then(() => console.log("Service Worker登録成功"))
+      .then(() =>
+        console.log("Service Worker登録成功")
+      )
       .catch(error =>
         console.error("Service Worker登録失敗", error)
       );
   });
 }
-
-
 </script>
 
 </body>

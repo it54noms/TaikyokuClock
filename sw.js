@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "taikyoku-clock-v3";
+const CACHE_NAME = "taikyoku-clock-v4";
 
 const FILES = [
   "./",
